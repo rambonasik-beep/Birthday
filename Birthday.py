@@ -4,7 +4,6 @@ from discord.ext import commands, tasks
 import datetime
 from replit import db
 import os
-import re
 
 # ---------------- BOT SETUP ----------------
 intents = discord.Intents.default()
@@ -80,7 +79,7 @@ async def check_birthdays():
 async def addbirthday(interaction: discord.Interaction, dob: str, game_name: str, actual_name: str, age: str):
     if interaction.channel.id != ENTRY_CHANNEL_ID:
         await interaction.response.send_message(
-            f"❌ Please use this command in the 🎂┊ʙɪʀᴛʜᴅᴀʏ-entry channel!", ephemeral=True)
+            "❌ Please use this command in the 🎂┊ʙɪʀᴛʜᴅᴀʏ-entry channel!", ephemeral=True)
         return
 
     if not validate_dob(dob):
@@ -112,7 +111,7 @@ async def addbirthday(interaction: discord.Interaction, dob: str, game_name: str
 async def updatebirthday(interaction: discord.Interaction, dob: str, game_name: str, actual_name: str, age: str):
     if interaction.channel.id != ENTRY_CHANNEL_ID:
         await interaction.response.send_message(
-            f"❌ Please use this command in the 🎂┊ʙɪʀᴛʜᴅᴀʏ-entry channel!", ephemeral=True)
+            "❌ Please use this command in the 🎂┊ʙɪʀᴛʜᴅᴀʏ-entry channel!", ephemeral=True)
         return
 
     data = load_data()
@@ -142,7 +141,7 @@ async def updatebirthday(interaction: discord.Interaction, dob: str, game_name: 
 async def deletebirthday(interaction: discord.Interaction):
     if interaction.channel.id != ENTRY_CHANNEL_ID:
         await interaction.response.send_message(
-            f"❌ Please use this command in the 🎂┊ʙɪʀᴛʜᴅᴀʏ-entry channel!", ephemeral=True)
+            "❌ Please use this command in the 🎂┊ʙɪʀᴛʜᴅᴀʏ-entry channel!", ephemeral=True)
         return
 
     data = load_data()
@@ -168,9 +167,12 @@ async def testbirthday(interaction: discord.Interaction):
 # ---------------- EVENTS ----------------
 @bot.event
 async def on_ready():
-    await tree.sync()  # register slash commands
-    print(f"✅ Logged in as {bot.user}")
+    GUILD_ID = int(os.environ["DISCORD_GUILD_ID"])  # Set this in Replit secrets
+    guild = discord.Object(id=GUILD_ID)
+    await tree.sync(guild=guild)  # instant command registration
+    print(f"✅ Logged in as {bot.user} (Commands synced for guild {GUILD_ID})")
     check_birthdays.start()
 
 # ---------------- RUN ----------------
-bot.run(os.environ["DISCORD_TOKEN"])
+DISCORD_TOKEN = os.environ["DISCORD_TOKEN"]  # Set this in Replit secrets
+bot.run(DISCORD_TOKEN)
