@@ -10,7 +10,9 @@ from discord.ui import Modal, InputText
 intents = discord.Intents.default()
 intents.message_content = True
 intents.guilds = True  # required for slash commands
-bot = commands.Bot(command_prefix="!", intents=intents)
+
+# Remove command_prefix entirely since we only use slash commands
+bot = commands.Bot(command_prefix=None, intents=intents)
 tree = bot.tree
 
 BIRTHDAY_IMAGE = "https://i.imgur.com/tXnYQ.png"
