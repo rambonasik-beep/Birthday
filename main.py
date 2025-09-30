@@ -4,7 +4,7 @@ from discord.ext import commands, tasks
 import datetime
 import os
 import json
-from discord.ui import Modal, InputText
+from discord.ui import Modal, TextInput
 from flask import Flask
 from threading import Thread
 
@@ -19,8 +19,8 @@ tree = bot.tree
 BIRTHDAY_IMAGE = "https://i.imgur.com/tXnYQ.png"
 
 # ---------------- CHANNEL IDS ----------------
-ENTRY_CHANNEL_ID = 1422609977587007558      # 🎂┊ʙɪʀᴛʜᴅᴀʏ-entry
-WISHES_CHANNEL_ID = 1235118178636664833     # 🎂┊ʙɪʀᴛʜᴅᴀʏ-ᴡɪsʜᴇs
+ENTRY_CHANNEL_ID = 1422609977587007558
+WISHES_CHANNEL_ID = 1235118178636664833
 
 DB_FILE = "birthdays.json"
 
@@ -82,10 +82,10 @@ class BirthdayModal(Modal):
     def __init__(self, title="Add Birthday Info", is_update=False):
         super().__init__(title=title)
         self.is_update = is_update
-        self.add_item(InputText(label="Date of Birth (YYYY-MM-DD)"))
-        self.add_item(InputText(label="Game Name"))
-        self.add_item(InputText(label="Actual Name"))
-        self.add_item(InputText(label="Age"))
+        self.add_item(TextInput(label="Date of Birth (YYYY-MM-DD)"))
+        self.add_item(TextInput(label="Game Name"))
+        self.add_item(TextInput(label="Actual Name"))
+        self.add_item(TextInput(label="Age"))
 
     async def on_submit(self, interaction: discord.Interaction):
         dob = self.children[0].value
@@ -108,7 +108,8 @@ class BirthdayModal(Modal):
 
         data = load_data()
         if self.is_update and str(interaction.user.id) not in data:
-            await interaction.response.send_message("❌ No info found to update. Use /addbirthday first.", ephemeral=True)
+            await interaction.response.send_message(
+                "❌ No info found to update. Use /addbirthday first.", ephemeral=True)
             return
 
         data[str(interaction.user.id)] = {
@@ -165,7 +166,7 @@ async def on_ready():
     print(f"✅ Logged in as {bot.user} (Commands synced for guild {GUILD_ID})")
     check_birthdays.start()
 
-# ---------------- OPTIONAL FLASK SERVER FOR KEEP-ALIVE ----------------
+# ---------------- OPTIONAL FLASK SERVER ----------------
 app = Flask('')
 
 @app.route('/')
@@ -177,6 +178,6 @@ def run():
 
 Thread(target=run).start()
 
-# ---------------- RUN ----------------
+# ---------------- RUN BOT ----------------
 DISCORD_TOKEN = os.environ["DISCORD_TOKEN"]
 bot.run(DISCORD_TOKEN)
