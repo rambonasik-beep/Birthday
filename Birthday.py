@@ -2,16 +2,17 @@ import discord
 from discord import app_commands
 from discord.ext import commands, tasks
 import datetime
-from replit import db
 import os
+import json
 from discord.ui import Modal, InputText
+from flask import Flask
+from threading import Thread
 
 # ---------------- BOT SETUP ----------------
 intents = discord.Intents.default()
+intents.guilds = True
 intents.message_content = True
-intents.guilds = True  # required for slash commands
 
-# Remove command_prefix entirely since we only use slash commands
 bot = commands.Bot(command_prefix=None, intents=intents)
 tree = bot.tree
 
@@ -21,12 +22,18 @@ BIRTHDAY_IMAGE = "https://i.imgur.com/tXnYQ.png"
 ENTRY_CHANNEL_ID = 1422609977587007558      # 🎂┊ʙɪʀᴛʜᴅᴀʏ-entry
 WISHES_CHANNEL_ID = 1235118178636664833     # 🎂┊ʙɪʀᴛʜᴅᴀʏ-ᴡɪsʜᴇs
 
+DB_FILE = "birthdays.json"
+
 # ---------------- HELPER FUNCTIONS ----------------
 def load_data():
-    return db.get("birthdays", {})
+    if not os.path.exists(DB_FILE):
+        return {}
+    with open(DB_FILE, "r") as f:
+        return json.load(f)
 
 def save_data(data):
-    db["birthdays"] = data
+    with open(DB_FILE, "w") as f:
+        json.dump(data, f, indent=4)
 
 def validate_dob(dob: str):
     try:
@@ -70,7 +77,7 @@ async def check_birthdays():
         except Exception as e:
             print(f"Error checking birthday: {e}")
 
-# ---------------- MODALS FOR ADD/UPDATE ----------------
+# ---------------- MODAL CLASS ----------------
 class BirthdayModal(Modal):
     def __init__(self, title="Add Birthday Info", is_update=False):
         super().__init__(title=title)
@@ -152,12 +159,24 @@ async def testbirthday(interaction: discord.Interaction):
 # ---------------- EVENTS ----------------
 @bot.event
 async def on_ready():
-    GUILD_ID = int(os.environ["DISCORD_GUILD_ID"])  # server ID in Replit secrets
+    GUILD_ID = int(os.environ["DISCORD_GUILD_ID"])
     guild = discord.Object(id=GUILD_ID)
     await tree.sync(guild=guild)  # instant command registration
     print(f"✅ Logged in as {bot.user} (Commands synced for guild {GUILD_ID})")
     check_birthdays.start()
 
+# ---------------- OPTIONAL FLASK SERVER FOR KEEP-ALIVE ----------------
+app = Flask('')
+
+@app.route('/')
+def home():
+    return "Bot is running!"
+
+def run():
+    app.run(host='0.0.0.0', port=10000)
+
+Thread(target=run).start()
+
 # ---------------- RUN ----------------
-DISCORD_TOKEN = os.environ["DISCORD_TOKEN"]  # bot token in Replit secrets
+DISCORD_TOKEN = os.environ["DISCORD_TOKEN"]
 bot.run(DISCORD_TOKEN)
