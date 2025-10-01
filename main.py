@@ -56,12 +56,12 @@ def calculate_age(dob: str):
     except:
         return None
 
+# ---------------- BIRTHDAY WISH ----------------
 async def send_birthday_message(user_id, info, test=False):
     channel = bot.get_channel(WISHES_CHANNEL_ID)
     if channel:
         age_now = calculate_age(info["dob"])
 
-        # 🎉 Birthday Embed
         embed = discord.Embed(
             title=f"🎉 Happy Birthday <@{user_id}>! 🎂",
             description="Wishing you a day filled with love, joy, and laughter",
@@ -69,18 +69,16 @@ async def send_birthday_message(user_id, info, test=False):
         )
         embed.add_field(name="Current Age", value=str(age_now), inline=True)
 
-        content = (
-            f"🎂 @everyone Join me in wishing <@{user_id}> a **Happy Birthday!** 🎉🥳"
-            if not test else f"🧪 Test: This is how your birthday wish would look for <@{user_id}>"
-        )
+        if not test:
+            content = f"🎂 @everyone Join me in wishing <@{user_id}> a **Happy Birthday!** 🎉🥳"
+        else:
+            content = f"🧪 Test: This is how your birthday wish would look for <@{user_id}>"
 
-        # Send main birthday embed
-        await channel.send(content=content, embed=embed)
-
-        # 🎂 Extra cake video
+        # ✅ Allow mentions
         await channel.send(
-            "🍰 Here’s your special cake! 🎥\n"
-            "https://media.tenor.com/DkXEqgqwoHYAAAPo/good-morning-snow-good-morning-snow-day.mp4"
+            content=content,
+            embed=embed,
+            allowed_mentions=discord.AllowedMentions(everyone=True, users=True)
         )
 
         print(f"[BIRTHDAY MESSAGE] Sent for user {user_id} (test={test})")
