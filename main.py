@@ -18,6 +18,13 @@ tree = bot.tree
 
 BIRTHDAY_IMAGE = "https://i.imgur.com/tXnYQ.png"
 
+# ---------------- ENVIRONMENT VARIABLES ----------------
+try:
+    DISCORD_TOKEN = os.environ["DISCORD_TOKEN"]       # from Render
+    DISCORD_GUILD_ID = int(os.environ["DISCORD_GUILD_ID"])  # from Render
+except KeyError as e:
+    raise RuntimeError(f"❌ Missing environment variable: {e}")
+
 # ---------------- CHANNEL IDS ----------------
 ENTRY_CHANNEL_ID = 1422609977587007558   # 🎂┊ʙɪʀᴛʜᴅᴀʏ-entry
 WISHES_CHANNEL_ID = 1235118178636664833 # 🎂┊ʙɪʀᴛʜᴅᴀʏ-ᴡɪsʜᴇs
@@ -188,7 +195,7 @@ class BirthdayView(View):
             )
 
         print(f"[UPCOMING] User {interaction.user} requested upcoming birthdays list")
-        await interaction.response.send_message(embed=embed)  # Public message
+        await interaction.response.send_message(embed=embed)
 
 # ---------------- SLASH COMMAND ----------------
 @tree.command(name="birthday", description="Manage your DOB info")
@@ -205,10 +212,9 @@ async def birthday(interaction: discord.Interaction):
 # ---------------- EVENTS ----------------
 @bot.event
 async def on_ready():
-    GUILD_ID = int(os.environ["DISCORD_GUILD_ID"])
-    guild = discord.Object(id=GUILD_ID)
-    await tree.sync(guild=guild)  # fast sync in your server
-    print(f"✅ Logged in as {bot.user} (Commands synced for guild {GUILD_ID})")
+    guild = discord.Object(id=DISCORD_GUILD_ID)
+    await tree.sync(guild=guild)  # sync commands only for your server
+    print(f"✅ Logged in as {bot.user} (Commands synced for guild {DISCORD_GUILD_ID})")
     check_birthdays.start()
 
 # ---------------- KEEP-ALIVE (Render) ----------------
@@ -224,5 +230,4 @@ def run():
 Thread(target=run).start()
 
 # ---------------- RUN BOT ----------------
-DISCORD_TOKEN = os.environ["DISCORD_TOKEN"]
 bot.run(DISCORD_TOKEN)
