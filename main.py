@@ -16,7 +16,9 @@ intents.message_content = True
 bot = commands.Bot(command_prefix=commands.when_mentioned, intents=intents)
 tree = bot.tree
 
-BIRTHDAY_IMAGE = "https://i.imgur.com/tXnYQ.png"
+# ---------------- CUSTOM CAKE IMAGE ----------------
+# Replace this link with your uploaded cake image from Discord
+BIRTHDAY_IMAGE = "https://cdn.discordapp.com/attachments/XXXX/XXXX/mycake.png"
 
 # ---------------- ENVIRONMENT VARIABLES ----------------
 try:
@@ -215,16 +217,7 @@ async def on_ready():
     guild = discord.Object(id=DISCORD_GUILD_ID)
     await tree.sync(guild=guild)  # sync commands only for your server
     print(f"✅ Logged in as {bot.user} (Commands synced for guild {DISCORD_GUILD_ID})")
-
-    # Auto-post birthday menu in entry channel
-    channel = bot.get_channel(ENTRY_CHANNEL_ID)
-    if channel:
-        view = BirthdayView()
-        await channel.send("🎂 Bot restarted! Choose an option below:", view=view)
-        print(f"[AUTO] Birthday menu posted in channel {ENTRY_CHANNEL_ID}")
-    else:
-        print(f"⚠️ Could not find ENTRY_CHANNEL_ID: {ENTRY_CHANNEL_ID}")
-
+    print("⚠️ Reminder: Run /birthday once in 🎂┊ʙɪʀᴛʜᴅᴀʏ-entry and PIN it!")
     check_birthdays.start()
 
 # ---------------- KEEP-ALIVE (Render) ----------------
