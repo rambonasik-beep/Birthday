@@ -69,16 +69,23 @@ async def send_birthday_message(user_id, info, test=False):
         )
         embed.add_field(name="Current Age", value=str(age_now), inline=True)
 
+        # Force @everyone + user mention
         if not test:
             content = f"🎂 @everyone Join me in wishing <@{user_id}> a **Happy Birthday!** 🎉🥳"
         else:
             content = f"🧪 Test: This is how your birthday wish would look for <@{user_id}>"
 
-        # ✅ Allow mentions
+        # ✅ Send embed with hardcoded mentions allowed
         await channel.send(
             content=content,
             embed=embed,
             allowed_mentions=discord.AllowedMentions(everyone=True, users=True)
+        )
+
+        # 🎥 Post your birthday-cat video link after embed
+        await channel.send(
+            "🐱🎂 Special Birthday Video:\n"
+            "https://media.tenor.com/XbP1DZ6PKBsAAAPo/birthday-cat.mp4"
         )
 
         print(f"[BIRTHDAY MESSAGE] Sent for user {user_id} (test={test})")
