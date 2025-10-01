@@ -16,9 +16,6 @@ intents.message_content = True
 bot = commands.Bot(command_prefix=commands.when_mentioned, intents=intents)
 tree = bot.tree
 
-# ---------------- CUSTOM CAKE IMAGE ----------------
-BIRTHDAY_IMAGE = "https://cdn.discordapp.com/attachments/XXXX/XXXX/cake.png"  # replace with your uploaded cake
-
 # ---------------- ENVIRONMENT VARIABLES ----------------
 try:
     DISCORD_TOKEN = os.environ["DISCORD_TOKEN"]       # from Render
@@ -67,12 +64,12 @@ async def send_birthday_message(user_id, info, test=False):
     if channel:
         age_now = calculate_age(info["dob"]) or info["age"]
 
+        # 🎉 Birthday Embed
         embed = discord.Embed(
             title="🎉 Happy Birthday!",
             description="Happy Birthday! Wishing you a day filled with love, joy, and laughter",
             color=discord.Color.pink()
         )
-        embed.set_image(url=BIRTHDAY_IMAGE)
         embed.add_field(name="Current Age", value=str(age_now), inline=True)
 
         content = (
@@ -80,7 +77,15 @@ async def send_birthday_message(user_id, info, test=False):
             if not test else f"🧪 Test: This is how your birthday wish would look for <@{user_id}>"
         )
 
+        # Send main birthday embed
         await channel.send(content=content, embed=embed)
+
+        # 🎂 Extra cake video (your link)
+        await channel.send(
+            "🍰 Here’s your special cake! 🎥\n"
+            "https://media.tenor.com/DkXEqgqwoHYAAAPo/good-morning-snow-good-morning-snow-day.mp4"
+        )
+
         print(f"[BIRTHDAY MESSAGE] Sent for user {user_id} (test={test})")
 
 # ---------------- AUTOMATIC BIRTHDAY CHECK ----------------
