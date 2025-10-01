@@ -27,7 +27,7 @@ except KeyError as e:
 
 # ---------------- CHANNEL IDS ----------------
 ENTRY_CHANNEL_ID = 1422609977587007558   # 🎂┊ʙɪʀᴛʜᴅᴀʏ-entry
-WISHES_CHANNEL_ID = 1235118178636664833 # 🎂┊ʙɪʀᴛʜᴅᴀʏ-ᴡɪsʜᴇs
+WISHES_CHANNEL_ID = 1235118178636664833  # 🎂┊ʙɪʀᴛʜᴅᴀʏ-ᴡɪsʜᴇs
 
 DB_FILE = "birthdays.json"
 
@@ -215,6 +215,16 @@ async def on_ready():
     guild = discord.Object(id=DISCORD_GUILD_ID)
     await tree.sync(guild=guild)  # sync commands only for your server
     print(f"✅ Logged in as {bot.user} (Commands synced for guild {DISCORD_GUILD_ID})")
+
+    # Auto-post birthday menu in entry channel
+    channel = bot.get_channel(ENTRY_CHANNEL_ID)
+    if channel:
+        view = BirthdayView()
+        await channel.send("🎂 Bot restarted! Choose an option below:", view=view)
+        print(f"[AUTO] Birthday menu posted in channel {ENTRY_CHANNEL_ID}")
+    else:
+        print(f"⚠️ Could not find ENTRY_CHANNEL_ID: {ENTRY_CHANNEL_ID}")
+
     check_birthdays.start()
 
 # ---------------- KEEP-ALIVE (Render) ----------------
