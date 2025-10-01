@@ -48,9 +48,6 @@ def validate_dob(dob: str):
     except ValueError:
         return False
 
-def validate_age(age: str):
-    return age.isdigit()
-
 def calculate_age(dob: str):
     try:
         birth_date = datetime.datetime.strptime(dob, "%Y-%m-%d").date()
@@ -62,12 +59,12 @@ def calculate_age(dob: str):
 async def send_birthday_message(user_id, info, test=False):
     channel = bot.get_channel(WISHES_CHANNEL_ID)
     if channel:
-        age_now = calculate_age(info["dob"]) or info["age"]
+        age_now = calculate_age(info["dob"])
 
         # 🎉 Birthday Embed
         embed = discord.Embed(
-            title="🎉 Happy Birthday!",
-            description="Happy Birthday! Wishing you a day filled with love, joy, and laughter",
+            title=f"🎉 Happy Birthday <@{user_id}>! 🎂",
+            description="Wishing you a day filled with love, joy, and laughter",
             color=discord.Color.pink()
         )
         embed.add_field(name="Current Age", value=str(age_now), inline=True)
@@ -80,7 +77,7 @@ async def send_birthday_message(user_id, info, test=False):
         # Send main birthday embed
         await channel.send(content=content, embed=embed)
 
-        # 🎂 Extra cake video (your link)
+        # 🎂 Extra cake video
         await channel.send(
             "🍰 Here’s your special cake! 🎥\n"
             "https://media.tenor.com/DkXEqgqwoHYAAAPo/good-morning-snow-good-morning-snow-day.mp4"
@@ -137,26 +134,20 @@ class DOBModal(Modal):
         super().__init__(title=title)
         self.is_update = is_update
         self.add_item(TextInput(label="Date of Birth (YYYY-MM-DD)"))
-        self.add_item(TextInput(label="Age (Number Only)"))
 
     async def on_submit(self, interaction: discord.Interaction):
         dob = self.children[0].value
-        age = self.children[1].value
 
         if not validate_dob(dob):
             await interaction.response.send_message("❌ Invalid DOB! Use YYYY-MM-DD format.", ephemeral=True)
             return
 
-        if not validate_age(age):
-            await interaction.response.send_message("❌ Age must be a number.", ephemeral=True)
-            return
-
         data = load_data()
-        data[str(interaction.user.id)] = {"dob": dob, "age": age}
+        data[str(interaction.user.id)] = {"dob": dob}
         save_data(data)
 
         action = "UPDATED" if self.is_update else "REGISTERED"
-        print(f"[{action}] User {interaction.user} ({interaction.user.id}) DOB={dob}, Age={age}")
+        print(f"[{action}] User {interaction.user} ({interaction.user.id}) DOB={dob}")
 
         await interaction.response.send_message(f"✅ DOB {action.lower()}!", ephemeral=True)
 
@@ -223,7 +214,7 @@ class BirthdayView(View):
         )
 
         for date, user_id, info in next_five:
-            age_next = calculate_age(info["dob"]) or info["age"]
+            age_next = calculate_age(info["dob"])
             embed.add_field(
                 name=date.strftime("%b %d"),
                 value=f"🎂 <@{user_id}> (Will be {age_next})",
