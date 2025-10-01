@@ -4,7 +4,7 @@ from discord.ext import commands, tasks
 import datetime
 import os
 import json
-from discord.ui import Modal, TextInput
+from discord.ui import Modal, TextInput, View, Button
 from flask import Flask
 from threading import Thread
 
@@ -19,8 +19,8 @@ tree = bot.tree
 BIRTHDAY_IMAGE = "https://i.imgur.com/tXnYQ.png"
 
 # ---------------- CHANNEL IDS ----------------
-ENTRY_CHANNEL_ID = 1422609977587007558
-WISHES_CHANNEL_ID = 1235118178636664833
+ENTRY_CHANNEL_ID = 1422609977587007558   # 🎂┊ʙɪʀᴛʜᴅᴀʏ-entry
+WISHES_CHANNEL_ID = 1235118178636664833 # 🎂┊ʙɪʀᴛʜᴅᴀʏ-ᴡɪsʜᴇs
 
 DB_FILE = "birthdays.json"
 
@@ -45,7 +45,7 @@ def validate_dob(dob: str):
 def validate_age(age: str):
     return age.isdigit()
 
-async def send_birthday_message(user_id, info):
+async def send_birthday_message(user_id, info, test=False):
     channel = bot.get_channel(WISHES_CHANNEL_ID)
     if channel:
         embed = discord.Embed(
@@ -54,14 +54,14 @@ async def send_birthday_message(user_id, info):
             color=discord.Color.pink()
         )
         embed.set_image(url=BIRTHDAY_IMAGE)
-        embed.add_field(name="Game Name", value=info["game_name"], inline=True)
-        embed.add_field(name="Actual Name", value=info["actual_name"], inline=True)
         embed.add_field(name="Age", value=info["age"], inline=True)
 
-        await channel.send(
-            content=f"🎂 @everyone Join me in wishing <@{user_id}> a **Happy Birthday!** 🎉🥳",
-            embed=embed
+        content = (
+            f"🎂 @everyone Join me in wishing <@{user_id}> a **Happy Birthday!** 🎉🥳"
+            if not test else f"🧪 Test: This is how your birthday wish would look for <@{user_id}>"
         )
+
+        await channel.send(content=content, embed=embed)
 
 # ---------------- AUTOMATIC BIRTHDAY CHECK ----------------
 @tasks.loop(hours=24)
@@ -77,29 +77,20 @@ async def check_birthdays():
         except Exception as e:
             print(f"Error checking birthday: {e}")
 
-# ---------------- MODAL CLASS ----------------
-class BirthdayModal(Modal):
-    def __init__(self, title="Add Birthday Info", is_update=False):
+# ---------------- DOB MODAL ----------------
+class DOBModal(Modal):
+    def __init__(self, title="Add DOB", is_update=False):
         super().__init__(title=title)
         self.is_update = is_update
         self.add_item(TextInput(label="Date of Birth (YYYY-MM-DD)"))
-        self.add_item(TextInput(label="Game Name"))
-        self.add_item(TextInput(label="Actual Name"))
-        self.add_item(TextInput(label="Age"))
+        self.add_item(TextInput(label="Age (Number Only)"))
 
     async def on_submit(self, interaction: discord.Interaction):
         dob = self.children[0].value
-        game_name = self.children[1].value
-        actual_name = self.children[2].value
-        age = self.children[3].value
-
-        if interaction.channel.id != ENTRY_CHANNEL_ID:
-            await interaction.response.send_message(
-                "❌ Please use this in the 🎂┊ʙɪʀᴛʜᴅᴀʏ-entry channel!", ephemeral=True)
-            return
+        age = self.children[1].value
 
         if not validate_dob(dob):
-            await interaction.response.send_message("❌ Invalid DOB! Use YYYY-MM-DD.", ephemeral=True)
+            await interaction.response.send_message("❌ Invalid DOB! Use YYYY-MM-DD format.", ephemeral=True)
             return
 
         if not validate_age(age):
@@ -108,65 +99,109 @@ class BirthdayModal(Modal):
 
         data = load_data()
         if self.is_update and str(interaction.user.id) not in data:
-            await interaction.response.send_message(
-                "❌ No info found to update. Use /addbirthday first.", ephemeral=True)
+            await interaction.response.send_message("❌ No DOB found to update. Use Register first.", ephemeral=True)
             return
 
         data[str(interaction.user.id)] = {
             "dob": dob,
-            "game_name": game_name,
-            "actual_name": actual_name,
             "age": age
         }
         save_data(data)
         await interaction.response.send_message(
-            "✅ Birthday info updated!" if self.is_update else "✅ Birthday info saved!", ephemeral=True
+            "✅ DOB Updated!" if self.is_update else "✅ DOB Registered!", ephemeral=True
         )
 
-# ---------------- SLASH COMMANDS ----------------
-@tree.command(name="addbirthday", description="Add your birthday info via modal")
-async def addbirthday(interaction: discord.Interaction):
-    await interaction.response.send_modal(BirthdayModal(title="Add Birthday Info"))
+# ---------------- VIEW WITH BUTTONS ----------------
+class BirthdayView(View):
+    def __init__(self):
+        super().__init__(timeout=None)
 
-@tree.command(name="updatebirthday", description="Update your birthday info via modal")
-async def updatebirthday(interaction: discord.Interaction):
-    await interaction.response.send_modal(BirthdayModal(title="Update Birthday Info", is_update=True))
+    @discord.ui.button(label="➕ Register DOB", style=discord.ButtonStyle.success)
+    async def register_callback(self, interaction: discord.Interaction, button: Button):
+        await interaction.response.send_modal(DOBModal(title="Register DOB", is_update=False))
 
-@tree.command(name="deletebirthday", description="Delete your birthday info")
-async def deletebirthday(interaction: discord.Interaction):
+    @discord.ui.button(label="✏️ Update DOB", style=discord.ButtonStyle.primary)
+    async def update_callback(self, interaction: discord.Interaction, button: Button):
+        await interaction.response.send_modal(DOBModal(title="Update DOB", is_update=True))
+
+    @discord.ui.button(label="🗑️ Delete DOB", style=discord.ButtonStyle.danger)
+    async def delete_callback(self, interaction: discord.Interaction, button: Button):
+        data = load_data()
+        if str(interaction.user.id) in data:
+            del data[str(interaction.user.id)]
+            save_data(data)
+            await interaction.response.send_message("🗑️ Your DOB entry has been deleted.", ephemeral=True)
+        else:
+            await interaction.response.send_message("❌ No DOB found to delete.", ephemeral=True)
+
+    @discord.ui.button(label="🧪 Test Birthday", style=discord.ButtonStyle.secondary)
+    async def test_callback(self, interaction: discord.Interaction, button: Button):
+        data = load_data()
+        if str(interaction.user.id) not in data:
+            await interaction.response.send_message("❌ No DOB found to test. Register first!", ephemeral=True)
+            return
+        await send_birthday_message(str(interaction.user.id), data[str(interaction.user.id)], test=True)
+        await interaction.response.send_message("✅ Test message sent to wishes channel!", ephemeral=True)
+
+    @discord.ui.button(label="📅 Upcoming Birthdays", style=discord.ButtonStyle.secondary)
+    async def upcoming_callback(self, interaction: discord.Interaction, button: Button):
+        data = load_data()
+        if not data:
+            await interaction.response.send_message("📭 No birthdays registered yet.")
+            return
+
+        today = datetime.datetime.now()
+        upcoming = []
+
+        for user_id, info in data.items():
+            try:
+                dob = datetime.datetime.strptime(info["dob"], "%Y-%m-%d")
+                next_bday = dob.replace(year=today.year)
+                if next_bday < today:
+                    next_bday = dob.replace(year=today.year + 1)
+                upcoming.append((next_bday, user_id, info))
+            except:
+                continue
+
+        upcoming.sort(key=lambda x: x[0])
+        next_five = upcoming[:5]
+
+        embed = discord.Embed(
+            title="📅 Upcoming Birthdays",
+            description="Here are the next birthdays in our server 🎂",
+            color=discord.Color.blue()
+        )
+
+        for date, user_id, info in next_five:
+            embed.add_field(
+                name=date.strftime("%b %d"),
+                value=f"🎂 <@{user_id}> (Age: {info['age']})",
+                inline=False
+            )
+
+        await interaction.response.send_message(embed=embed)  # Public message
+
+# ---------------- SLASH COMMAND ----------------
+@tree.command(name="birthday", description="Manage your DOB info")
+async def birthday(interaction: discord.Interaction):
     if interaction.channel.id != ENTRY_CHANNEL_ID:
         await interaction.response.send_message(
-            "❌ Please use this command in the 🎂┊ʙɪʀᴛʜᴅᴀʏ-entry channel!", ephemeral=True)
+            f"❌ Please only use this command in <#{ENTRY_CHANNEL_ID}> channel.", ephemeral=True)
         return
 
-    data = load_data()
-    if str(interaction.user.id) in data:
-        del data[str(interaction.user.id)]
-        save_data(data)
-        await interaction.response.send_message("🗑️ Your birthday info has been deleted.", ephemeral=True)
-    else:
-        await interaction.response.send_message("❌ No birthday info found.", ephemeral=True)
-
-@tree.command(name="testbirthday", description="Test your birthday message")
-async def testbirthday(interaction: discord.Interaction):
-    data = load_data()
-    if str(interaction.user.id) not in data:
-        await interaction.response.send_message("❌ You haven't added your birthday info yet.", ephemeral=True)
-        return
-    info = data[str(interaction.user.id)]
-    await send_birthday_message(str(interaction.user.id), info)
-    await interaction.response.send_message("✅ Birthday message sent to the wishes channel.", ephemeral=True)
+    view = BirthdayView()
+    await interaction.response.send_message("🎂 Choose an option below:", view=view, ephemeral=True)
 
 # ---------------- EVENTS ----------------
 @bot.event
 async def on_ready():
     GUILD_ID = int(os.environ["DISCORD_GUILD_ID"])
     guild = discord.Object(id=GUILD_ID)
-    await tree.sync(guild=guild)  # instant command registration
+    await tree.sync(guild=guild)  # fast sync in your server
     print(f"✅ Logged in as {bot.user} (Commands synced for guild {GUILD_ID})")
     check_birthdays.start()
 
-# ---------------- OPTIONAL FLASK SERVER ----------------
+# ---------------- KEEP-ALIVE (Render) ----------------
 app = Flask('')
 
 @app.route('/')
