@@ -13,7 +13,7 @@ intents = discord.Intents.default()
 intents.guilds = True
 intents.message_content = True
 
-bot = commands.Bot(command_prefix=None, intents=intents)
+bot = commands.Bot(command_prefix=commands.when_mentioned, intents=intents)
 tree = bot.tree
 
 BIRTHDAY_IMAGE = "https://i.imgur.com/tXnYQ.png"
@@ -62,6 +62,7 @@ async def send_birthday_message(user_id, info, test=False):
         )
 
         await channel.send(content=content, embed=embed)
+        print(f"[BIRTHDAY MESSAGE] Sent for user {user_id} (test={test})")
 
 # ---------------- AUTOMATIC BIRTHDAY CHECK ----------------
 @tasks.loop(hours=24)
@@ -74,6 +75,7 @@ async def check_birthdays():
             dob = datetime.datetime.strptime(info["dob"], "%Y-%m-%d")
             if dob.strftime("%m-%d") == today:
                 await send_birthday_message(user_id, info)
+                print(f"[AUTO] Birthday detected for {user_id} on {today}")
         except Exception as e:
             print(f"Error checking birthday: {e}")
 
@@ -107,8 +109,12 @@ class DOBModal(Modal):
             "age": age
         }
         save_data(data)
+
+        action = "UPDATED" if self.is_update else "REGISTERED"
+        print(f"[{action}] User {interaction.user} ({interaction.user.id}) DOB={dob}, Age={age}")
+
         await interaction.response.send_message(
-            "✅ DOB Updated!" if self.is_update else "✅ DOB Registered!", ephemeral=True
+            f"✅ DOB {action.lower()}!", ephemeral=True
         )
 
 # ---------------- VIEW WITH BUTTONS ----------------
@@ -130,6 +136,7 @@ class BirthdayView(View):
         if str(interaction.user.id) in data:
             del data[str(interaction.user.id)]
             save_data(data)
+            print(f"[DELETED] User {interaction.user} ({interaction.user.id}) deleted DOB entry")
             await interaction.response.send_message("🗑️ Your DOB entry has been deleted.", ephemeral=True)
         else:
             await interaction.response.send_message("❌ No DOB found to delete.", ephemeral=True)
@@ -141,6 +148,7 @@ class BirthdayView(View):
             await interaction.response.send_message("❌ No DOB found to test. Register first!", ephemeral=True)
             return
         await send_birthday_message(str(interaction.user.id), data[str(interaction.user.id)], test=True)
+        print(f"[TEST] User {interaction.user} ({interaction.user.id}) tested birthday message")
         await interaction.response.send_message("✅ Test message sent to wishes channel!", ephemeral=True)
 
     @discord.ui.button(label="📅 Upcoming Birthdays", style=discord.ButtonStyle.secondary)
@@ -179,6 +187,7 @@ class BirthdayView(View):
                 inline=False
             )
 
+        print(f"[UPCOMING] User {interaction.user} requested upcoming birthdays list")
         await interaction.response.send_message(embed=embed)  # Public message
 
 # ---------------- SLASH COMMAND ----------------
@@ -190,6 +199,7 @@ async def birthday(interaction: discord.Interaction):
         return
 
     view = BirthdayView()
+    print(f"[COMMAND] User {interaction.user} ({interaction.user.id}) used /birthday")
     await interaction.response.send_message("🎂 Choose an option below:", view=view, ephemeral=True)
 
 # ---------------- EVENTS ----------------
