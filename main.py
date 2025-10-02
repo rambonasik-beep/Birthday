@@ -3,7 +3,7 @@ from discord import app_commands
 from discord.ext import commands, tasks
 import datetime
 import os
-import json
+from replit import db  # ✅ Persistent cloud database
 from discord.ui import Modal, TextInput, View, Button
 from flask import Flask
 from threading import Thread
@@ -27,19 +27,17 @@ except KeyError as e:
 ENTRY_CHANNEL_ID = 1422609977587007558   # 🎂┊ʙɪʀᴛʜᴅᴀʏ-entry
 WISHES_CHANNEL_ID = 1235118178636664833  # 🎂┊ʙɪʀᴛʜᴅᴀʏ-ᴡɪsʜᴇs
 
-DB_FILE = "birthdays.json"
-MENU_FILE = "menu_message.json"  # track last menu message id
-
 # ---------------- HELPER FUNCTIONS ----------------
 def load_data():
-    if not os.path.exists(DB_FILE):
+    """Load all birthday data from Replit DB"""
+    try:
+        return dict(db["birthdays"])
+    except KeyError:
         return {}
-    with open(DB_FILE, "r") as f:
-        return json.load(f)
 
 def save_data(data):
-    with open(DB_FILE, "w") as f:
-        json.dump(data, f, indent=4)
+    """Save all birthday data to Replit DB"""
+    db["birthdays"] = data
 
 def validate_dob(dob: str):
     try:
@@ -69,23 +67,15 @@ async def send_birthday_message(user_id, info, test=False):
         )
         embed.add_field(name="Current Age", value=str(age_now), inline=True)
 
-        # Force @everyone + user mention
         if not test:
             content = f"🎂 @everyone Join me in wishing <@{user_id}> a **Happy Birthday!** 🎉🥳"
         else:
             content = f"🧪 Test: This is how your birthday wish would look for <@{user_id}>"
 
-        # ✅ Send embed with hardcoded mentions allowed
         await channel.send(
             content=content,
             embed=embed,
             allowed_mentions=discord.AllowedMentions(everyone=True, users=True)
-        )
-
-        # 🎥 Post your birthday-cat video link after embed
-        await channel.send(
-            "🐱🎂 Special Birthday Video:\n"
-            "https://media.tenor.com/XbP1DZ6PKBsAAAPo/birthday-cat.mp4"
         )
 
         print(f"[BIRTHDAY MESSAGE] Sent for user {user_id} (test={test})")
@@ -104,34 +94,6 @@ async def check_birthdays():
                 print(f"[AUTO] Birthday detected for {user_id} on {today}")
         except Exception as e:
             print(f"Error checking birthday: {e}")
-
-# ---------------- MENU REFRESH LOOP ----------------
-@tasks.loop(hours=24)
-async def refresh_menu():
-    await bot.wait_until_ready()
-    channel = bot.get_channel(ENTRY_CHANNEL_ID)
-    if not channel:
-        return
-
-    # delete old menu if exists
-    if os.path.exists(MENU_FILE):
-        with open(MENU_FILE, "r") as f:
-            try:
-                old_id = int(f.read().strip())
-                old_msg = await channel.fetch_message(old_id)
-                await old_msg.unpin()
-                await old_msg.delete()
-                print(f"[MENU] Deleted old menu {old_id}")
-            except:
-                pass
-
-    # send new menu
-    view = BirthdayView()
-    new_msg = await channel.send("🎂 Daily Birthday Menu - Choose an option below:", view=view)
-    await new_msg.pin()  # pin the new menu
-    with open(MENU_FILE, "w") as f:
-        f.write(str(new_msg.id))
-    print(f"[MENU] Posted and pinned new menu {new_msg.id}")
 
 # ---------------- DOB MODAL ----------------
 class DOBModal(Modal):
@@ -193,7 +155,7 @@ class BirthdayView(View):
     async def upcoming_callback(self, interaction: discord.Interaction, button: Button):
         data = load_data()
         if not data:
-            await interaction.response.send_message("📭 No birthdays registered yet.")
+            await interaction.response.send_message("📭 No birthdays registered yet.", ephemeral=True)
             return
 
         today = datetime.datetime.now()
@@ -210,15 +172,15 @@ class BirthdayView(View):
                 continue
 
         upcoming.sort(key=lambda x: x[0])
-        next_five = upcoming[:5]
+        next_fifteen = upcoming[:15]
 
         embed = discord.Embed(
             title="📅 Upcoming Birthdays",
-            description="Here are the next birthdays in our server 🎂",
+            description="Here are the next 15 birthdays in our server 🎂",
             color=discord.Color.blue()
         )
 
-        for date, user_id, info in next_five:
+        for date, user_id, info in next_fifteen:
             age_next = calculate_age(info["dob"])
             embed.add_field(
                 name=date.strftime("%b %d"),
@@ -226,7 +188,7 @@ class BirthdayView(View):
                 inline=False
             )
 
-        await interaction.response.send_message(embed=embed)
+        await interaction.response.send_message(embed=embed, ephemeral=True)
 
 # ---------------- SLASH COMMAND ----------------
 @bot.tree.command(name="birthday", description="Manage your DOB info")
@@ -247,9 +209,16 @@ async def on_ready():
     await tree.sync(guild=guild)
     print(f"✅ Logged in as {bot.user} (Commands synced for guild {DISCORD_GUILD_ID})")
 
+    # Auto-post persistent birthday menu at startup
+    channel = bot.get_channel(ENTRY_CHANNEL_ID)
+    if channel:
+        view = BirthdayView()
+        menu_msg = await channel.send("🎂 Birthday Menu - Choose an option below:", view=view)
+        await menu_msg.pin()
+        print("[AUTO] Birthday menu posted and pinned.")
+
     # Start loops
     check_birthdays.start()
-    refresh_menu.start()
 
 # ---------------- KEEP-ALIVE (Render) ----------------
 app = Flask('')
