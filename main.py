@@ -12,6 +12,7 @@ from threading import Thread
 intents = discord.Intents.default()
 intents.guilds = True
 intents.message_content = True
+intents.members = True  # needed for role checks
 
 bot = commands.Bot(command_prefix=commands.when_mentioned, intents=intents)
 tree = bot.tree
@@ -146,36 +147,23 @@ class BirthdayView(View):
     def __init__(self):
         super().__init__(timeout=None)
 
-    @discord.ui.button(label="➕ Register DOB", style=discord.ButtonStyle.success)
+    @discord.ui.button(label="➕ Register DOB", style=discord.ButtonStyle.success, custom_id="register_dob")
     async def register_callback(self, interaction: discord.Interaction, button: Button):
-        try:
-            await interaction.response.send_modal(DOBModal(title="Register DOB", is_update=False))
-            print(f"[MODAL] Register DOB opened for {interaction.user}")
-        except Exception as e:
-            print(f"[ERROR] Could not open Register modal: {e}")
-            if not interaction.response.is_done():
-                await interaction.response.send_message("❌ Failed to open modal.", ephemeral=True)
+        await interaction.response.send_modal(DOBModal(title="Register DOB", is_update=False))
 
-    @discord.ui.button(label="✏️ Update DOB", style=discord.ButtonStyle.primary)
+    @discord.ui.button(label="✏️ Update DOB", style=discord.ButtonStyle.primary, custom_id="update_dob")
     async def update_callback(self, interaction: discord.Interaction, button: Button):
-        try:
-            await interaction.response.send_modal(DOBModal(title="Update DOB", is_update=True))
-            print(f"[MODAL] Update DOB opened for {interaction.user}")
-        except Exception as e:
-            print(f"[ERROR] Could not open Update modal: {e}")
-            if not interaction.response.is_done():
-                await interaction.response.send_message("❌ Failed to open modal.", ephemeral=True)
+        await interaction.response.send_modal(DOBModal(title="Update DOB", is_update=True))
 
-    @discord.ui.button(label="🗑️ Delete DOB", style=discord.ButtonStyle.danger)
+    @discord.ui.button(label="🗑️ Delete DOB", style=discord.ButtonStyle.danger, custom_id="delete_dob")
     async def delete_callback(self, interaction: discord.Interaction, button: Button):
         if get_user_birthday(str(interaction.user.id)):
             delete_user_birthday(str(interaction.user.id))
-            print(f"[DELETED] User {interaction.user} ({interaction.user.id}) deleted DOB entry")
             await interaction.response.send_message("🗑️ Your DOB entry has been deleted.", ephemeral=True)
         else:
             await interaction.response.send_message("❌ No DOB found to delete.", ephemeral=True)
 
-    @discord.ui.button(label="🧪 Test Birthday", style=discord.ButtonStyle.secondary)
+    @discord.ui.button(label="🧪 Test Birthday", style=discord.ButtonStyle.secondary, custom_id="test_birthday")
     async def test_callback(self, interaction: discord.Interaction, button: Button):
         info = get_user_birthday(str(interaction.user.id))
         if not info:
@@ -184,7 +172,7 @@ class BirthdayView(View):
         await send_birthday_message(str(interaction.user.id), info, test=True)
         await interaction.response.send_message("✅ Test message sent to wishes channel!", ephemeral=True)
 
-    @discord.ui.button(label="📅 Upcoming Birthdays", style=discord.ButtonStyle.secondary)
+    @discord.ui.button(label="📅 Upcoming Birthdays", style=discord.ButtonStyle.secondary, custom_id="upcoming_birthdays")
     async def upcoming_callback(self, interaction: discord.Interaction, button: Button):
         data = get_all_birthdays()
         if not data:
@@ -223,7 +211,7 @@ class BirthdayView(View):
 
         await interaction.response.send_message(embed=embed, ephemeral=True)
 
-# ---------------- SLASH COMMAND ----------------
+# ---------------- SLASH COMMANDS ----------------
 @bot.tree.command(name="birthday", description="Manage your DOB info")
 async def birthday(interaction: discord.Interaction):
     if interaction.channel.id != ENTRY_CHANNEL_ID:
@@ -235,6 +223,28 @@ async def birthday(interaction: discord.Interaction):
     view = BirthdayView()
     await interaction.response.send_message("🎂 Choose an option below:", view=view, ephemeral=True)
 
+@bot.tree.command(name="dbcheck", description="Check MongoDB connection and registered birthdays (Admin only)")
+async def dbcheck(interaction: discord.Interaction):
+    # ✅ Role check for "Admin"
+    if not any(r.name == "Admin" for r in interaction.user.roles):
+        await interaction.response.send_message("❌ You must have the 'Admin' role to use this command.", ephemeral=True)
+        return
+
+    try:
+        count = birthdays_collection.count_documents({})
+        await interaction.response.send_message(
+            f"✅ MongoDB connection is alive.\n"
+            f"📊 Registered birthdays: **{count}** users",
+            ephemeral=True
+        )
+        print(f"[DBCHECK] {interaction.user} checked DB: {count} users")
+    except Exception as e:
+        await interaction.response.send_message(
+            f"❌ Database check failed.\nError: `{e}`",
+            ephemeral=True
+        )
+        print(f"[ERROR] DB check failed: {e}")
+
 # ---------------- EVENTS ----------------
 @bot.event
 async def on_ready():
@@ -242,7 +252,7 @@ async def on_ready():
     await tree.sync(guild=guild)
     print(f"✅ Logged in as {bot.user} (Commands synced for guild {DISCORD_GUILD_ID})")
 
-    # Persistent view registration
+    # Register persistent view
     bot.add_view(BirthdayView())
 
     # Auto-post menu on startup
