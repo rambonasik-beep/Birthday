@@ -117,7 +117,6 @@ class DOBModal(Modal):
         try:
             dob = self.children[0].value.strip()
 
-            # Validate DOB format
             if not validate_dob(dob):
                 await interaction.response.send_message(
                     "❌ Invalid DOB! Please use YYYY-MM-DD format (e.g. 1997-10-15).",
@@ -125,7 +124,6 @@ class DOBModal(Modal):
                 )
                 return
 
-            # Save DOB to MongoDB
             save_user_birthday(str(interaction.user.id), dob)
 
             action = "UPDATED" if self.is_update else "REGISTERED"
@@ -137,10 +135,11 @@ class DOBModal(Modal):
 
         except Exception as e:
             print(f"[ERROR] DOB register/update failed: {e}")
-            await interaction.response.send_message(
-                f"❌ Something went wrong while saving your DOB.\nError: `{e}`",
-                ephemeral=True
-            )
+            if not interaction.response.is_done():
+                await interaction.response.send_message(
+                    f"❌ Something went wrong.\nError: `{e}`",
+                    ephemeral=True
+                )
 
 # ---------------- VIEW WITH BUTTONS ----------------
 class BirthdayView(View):
@@ -149,11 +148,23 @@ class BirthdayView(View):
 
     @discord.ui.button(label="➕ Register DOB", style=discord.ButtonStyle.success)
     async def register_callback(self, interaction: discord.Interaction, button: Button):
-        await interaction.response.send_modal(DOBModal(title="Register DOB", is_update=False))
+        try:
+            await interaction.response.send_modal(DOBModal(title="Register DOB", is_update=False))
+            print(f"[MODAL] Register DOB opened for {interaction.user}")
+        except Exception as e:
+            print(f"[ERROR] Could not open Register modal: {e}")
+            if not interaction.response.is_done():
+                await interaction.response.send_message("❌ Failed to open modal.", ephemeral=True)
 
     @discord.ui.button(label="✏️ Update DOB", style=discord.ButtonStyle.primary)
     async def update_callback(self, interaction: discord.Interaction, button: Button):
-        await interaction.response.send_modal(DOBModal(title="Update DOB", is_update=True))
+        try:
+            await interaction.response.send_modal(DOBModal(title="Update DOB", is_update=True))
+            print(f"[MODAL] Update DOB opened for {interaction.user}")
+        except Exception as e:
+            print(f"[ERROR] Could not open Update modal: {e}")
+            if not interaction.response.is_done():
+                await interaction.response.send_message("❌ Failed to open modal.", ephemeral=True)
 
     @discord.ui.button(label="🗑️ Delete DOB", style=discord.ButtonStyle.danger)
     async def delete_callback(self, interaction: discord.Interaction, button: Button):
@@ -198,7 +209,7 @@ class BirthdayView(View):
 
         embed = discord.Embed(
             title="📅 Upcoming Birthdays",
-            description="Here are the next 15 birthdays in our server 🎂",
+            description="Here are the next 15 birthdays 🎂",
             color=discord.Color.blue()
         )
 
@@ -231,7 +242,10 @@ async def on_ready():
     await tree.sync(guild=guild)
     print(f"✅ Logged in as {bot.user} (Commands synced for guild {DISCORD_GUILD_ID})")
 
-    # Auto-post birthday menu at startup
+    # Persistent view registration
+    bot.add_view(BirthdayView())
+
+    # Auto-post menu on startup
     channel = bot.get_channel(ENTRY_CHANNEL_ID)
     if channel:
         view = BirthdayView()
@@ -239,10 +253,9 @@ async def on_ready():
         await menu_msg.pin()
         print("[AUTO] Birthday menu posted and pinned.")
 
-    # Start birthday loop
     check_birthdays.start()
 
-# ---------------- KEEP-ALIVE (Render) ----------------
+# ---------------- KEEP-ALIVE ----------------
 app = Flask('')
 
 @app.route('/')
