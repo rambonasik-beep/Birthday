@@ -114,16 +114,33 @@ class DOBModal(Modal):
         self.add_item(TextInput(label="Date of Birth (YYYY-MM-DD)"))
 
     async def on_submit(self, interaction: discord.Interaction):
-        dob = self.children[0].value
+        try:
+            dob = self.children[0].value.strip()
 
-        if not validate_dob(dob):
-            await interaction.response.send_message("❌ Invalid DOB! Use YYYY-MM-DD format.", ephemeral=True)
-            return
+            # Validate DOB format
+            if not validate_dob(dob):
+                await interaction.response.send_message(
+                    "❌ Invalid DOB! Please use YYYY-MM-DD format (e.g. 1997-10-15).",
+                    ephemeral=True
+                )
+                return
 
-        save_user_birthday(str(interaction.user.id), dob)
-        action = "UPDATED" if self.is_update else "REGISTERED"
-        print(f"[{action}] User {interaction.user} ({interaction.user.id}) DOB={dob}")
-        await interaction.response.send_message(f"✅ DOB {action.lower()}!", ephemeral=True)
+            # Save DOB to MongoDB
+            save_user_birthday(str(interaction.user.id), dob)
+
+            action = "UPDATED" if self.is_update else "REGISTERED"
+            print(f"[{action}] User {interaction.user} ({interaction.user.id}) DOB={dob}")
+
+            await interaction.response.send_message(
+                f"✅ DOB {action.lower()} successfully!", ephemeral=True
+            )
+
+        except Exception as e:
+            print(f"[ERROR] DOB register/update failed: {e}")
+            await interaction.response.send_message(
+                f"❌ Something went wrong while saving your DOB.\nError: `{e}`",
+                ephemeral=True
+            )
 
 # ---------------- VIEW WITH BUTTONS ----------------
 class BirthdayView(View):
