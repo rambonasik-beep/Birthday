@@ -3,7 +3,7 @@ from discord import app_commands
 from discord.ext import commands, tasks
 import datetime
 import os
-from replit import db  # ✅ Persistent cloud database
+from pymongo import MongoClient
 from discord.ui import Modal, TextInput, View, Button
 from flask import Flask
 from threading import Thread
@@ -18,27 +18,22 @@ tree = bot.tree
 
 # ---------------- ENVIRONMENT VARIABLES ----------------
 try:
-    DISCORD_TOKEN = os.environ["DISCORD_TOKEN"]       # from Render
+    DISCORD_TOKEN = os.environ["DISCORD_TOKEN"]        # from Render
     DISCORD_GUILD_ID = int(os.environ["DISCORD_GUILD_ID"])  # from Render
+    MONGO_URI = os.environ["MONGO_URI"]                # MongoDB Atlas connection string
 except KeyError as e:
     raise RuntimeError(f"❌ Missing environment variable: {e}")
+
+# ---------------- DATABASE SETUP ----------------
+mongo_client = MongoClient(MONGO_URI)
+db = mongo_client["birthdaybot"]
+birthdays_collection = db["birthdays"]
 
 # ---------------- CHANNEL IDS ----------------
 ENTRY_CHANNEL_ID = 1422609977587007558   # 🎂┊ʙɪʀᴛʜᴅᴀʏ-entry
 WISHES_CHANNEL_ID = 1235118178636664833  # 🎂┊ʙɪʀᴛʜᴅᴀʏ-ᴡɪsʜᴇs
 
 # ---------------- HELPER FUNCTIONS ----------------
-def load_data():
-    """Load all birthday data from Replit DB"""
-    try:
-        return dict(db["birthdays"])
-    except KeyError:
-        return {}
-
-def save_data(data):
-    """Save all birthday data to Replit DB"""
-    db["birthdays"] = data
-
 def validate_dob(dob: str):
     try:
         datetime.datetime.strptime(dob, "%Y-%m-%d")
@@ -53,6 +48,22 @@ def calculate_age(dob: str):
         return today.year - birth_date.year - ((today.month, today.day) < (birth_date.month, birth_date.day))
     except:
         return None
+
+def get_user_birthday(user_id: str):
+    return birthdays_collection.find_one({"user_id": user_id})
+
+def save_user_birthday(user_id: str, dob: str):
+    birthdays_collection.update_one(
+        {"user_id": user_id},
+        {"$set": {"dob": dob}},
+        upsert=True
+    )
+
+def delete_user_birthday(user_id: str):
+    birthdays_collection.delete_one({"user_id": user_id})
+
+def get_all_birthdays():
+    return list(birthdays_collection.find({}))
 
 # ---------------- BIRTHDAY WISH ----------------
 async def send_birthday_message(user_id, info, test=False):
@@ -85,13 +96,13 @@ async def send_birthday_message(user_id, info, test=False):
 async def check_birthdays():
     await bot.wait_until_ready()
     today = datetime.datetime.now().strftime("%m-%d")
-    data = load_data()
-    for user_id, info in data.items():
+    data = get_all_birthdays()
+    for info in data:
         try:
             dob = datetime.datetime.strptime(info["dob"], "%Y-%m-%d")
             if dob.strftime("%m-%d") == today:
-                await send_birthday_message(user_id, info)
-                print(f"[AUTO] Birthday detected for {user_id} on {today}")
+                await send_birthday_message(info["user_id"], info)
+                print(f"[AUTO] Birthday detected for {info['user_id']} on {today}")
         except Exception as e:
             print(f"Error checking birthday: {e}")
 
@@ -109,13 +120,9 @@ class DOBModal(Modal):
             await interaction.response.send_message("❌ Invalid DOB! Use YYYY-MM-DD format.", ephemeral=True)
             return
 
-        data = load_data()
-        data[str(interaction.user.id)] = {"dob": dob}
-        save_data(data)
-
+        save_user_birthday(str(interaction.user.id), dob)
         action = "UPDATED" if self.is_update else "REGISTERED"
         print(f"[{action}] User {interaction.user} ({interaction.user.id}) DOB={dob}")
-
         await interaction.response.send_message(f"✅ DOB {action.lower()}!", ephemeral=True)
 
 # ---------------- VIEW WITH BUTTONS ----------------
@@ -133,10 +140,8 @@ class BirthdayView(View):
 
     @discord.ui.button(label="🗑️ Delete DOB", style=discord.ButtonStyle.danger)
     async def delete_callback(self, interaction: discord.Interaction, button: Button):
-        data = load_data()
-        if str(interaction.user.id) in data:
-            del data[str(interaction.user.id)]
-            save_data(data)
+        if get_user_birthday(str(interaction.user.id)):
+            delete_user_birthday(str(interaction.user.id))
             print(f"[DELETED] User {interaction.user} ({interaction.user.id}) deleted DOB entry")
             await interaction.response.send_message("🗑️ Your DOB entry has been deleted.", ephemeral=True)
         else:
@@ -144,16 +149,16 @@ class BirthdayView(View):
 
     @discord.ui.button(label="🧪 Test Birthday", style=discord.ButtonStyle.secondary)
     async def test_callback(self, interaction: discord.Interaction, button: Button):
-        data = load_data()
-        if str(interaction.user.id) not in data:
+        info = get_user_birthday(str(interaction.user.id))
+        if not info:
             await interaction.response.send_message("❌ No DOB found to test. Register first!", ephemeral=True)
             return
-        await send_birthday_message(str(interaction.user.id), data[str(interaction.user.id)], test=True)
+        await send_birthday_message(str(interaction.user.id), info, test=True)
         await interaction.response.send_message("✅ Test message sent to wishes channel!", ephemeral=True)
 
     @discord.ui.button(label="📅 Upcoming Birthdays", style=discord.ButtonStyle.secondary)
     async def upcoming_callback(self, interaction: discord.Interaction, button: Button):
-        data = load_data()
+        data = get_all_birthdays()
         if not data:
             await interaction.response.send_message("📭 No birthdays registered yet.", ephemeral=True)
             return
@@ -161,13 +166,13 @@ class BirthdayView(View):
         today = datetime.datetime.now()
         upcoming = []
 
-        for user_id, info in data.items():
+        for info in data:
             try:
                 dob = datetime.datetime.strptime(info["dob"], "%Y-%m-%d")
                 next_bday = dob.replace(year=today.year)
                 if next_bday < today:
                     next_bday = dob.replace(year=today.year + 1)
-                upcoming.append((next_bday, user_id, info))
+                upcoming.append((next_bday, info["user_id"], info))
             except:
                 continue
 
@@ -209,7 +214,7 @@ async def on_ready():
     await tree.sync(guild=guild)
     print(f"✅ Logged in as {bot.user} (Commands synced for guild {DISCORD_GUILD_ID})")
 
-    # Auto-post persistent birthday menu at startup
+    # Auto-post birthday menu at startup
     channel = bot.get_channel(ENTRY_CHANNEL_ID)
     if channel:
         view = BirthdayView()
@@ -217,7 +222,7 @@ async def on_ready():
         await menu_msg.pin()
         print("[AUTO] Birthday menu posted and pinned.")
 
-    # Start loops
+    # Start birthday loop
     check_birthdays.start()
 
 # ---------------- KEEP-ALIVE (Render) ----------------
