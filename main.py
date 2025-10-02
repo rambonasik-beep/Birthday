@@ -7,26 +7,27 @@ from pymongo import MongoClient
 from discord.ui import Modal, TextInput, View, Button
 from flask import Flask
 from threading import Thread
+import requests
 
 # ---------------- BOT SETUP ----------------
 intents = discord.Intents.default()
 intents.guilds = True
 intents.message_content = True
-intents.members = True  # needed for role checks
+intents.members = True  # for role checks
 
 bot = commands.Bot(command_prefix=commands.when_mentioned, intents=intents)
 tree = bot.tree
 
 # ---------------- ENVIRONMENT VARIABLES ----------------
 try:
-    DISCORD_TOKEN = os.environ["DISCORD_TOKEN"]        # from Render
-    DISCORD_GUILD_ID = int(os.environ["DISCORD_GUILD_ID"])  # from Render
-    MONGO_URI = os.environ["MONGO_URI"]                # MongoDB Atlas connection string
+    DISCORD_TOKEN = os.environ["DISCORD_TOKEN"]
+    DISCORD_GUILD_ID = int(os.environ["DISCORD_GUILD_ID"])
+    MONGO_URI = os.environ["MONGO_URI"]
 except KeyError as e:
-    raise RuntimeError(f"❌ Missing environment variable: {e}")
+    raise RuntimeError(f"Missing environment variable: {e}")
 
-# ---------------- DATABASE SETUP ----------------
-mongo_client = MongoClient(MONGO_URI)
+# ---------------- MONGO DB ----------------
+mongo_client = MongoClient(MONGO_URI, tls=True, tlsAllowInvalidCertificates=True)
 db = mongo_client["birthdaybot"]
 birthdays_collection = db["birthdays"]
 
@@ -34,7 +35,7 @@ birthdays_collection = db["birthdays"]
 ENTRY_CHANNEL_ID = 1422609977587007558   # 🎂┊ʙɪʀᴛʜᴅᴀʏ-entry
 WISHES_CHANNEL_ID = 1235118178636664833  # 🎂┊ʙɪʀᴛʜᴅᴀʏ-ᴡɪsʜᴇs
 
-# ---------------- HELPER FUNCTIONS ----------------
+# ---------------- HELPERS ----------------
 def validate_dob(dob: str):
     try:
         datetime.datetime.strptime(dob, "%Y-%m-%d")
@@ -50,62 +51,68 @@ def calculate_age(dob: str):
     except:
         return None
 
-def get_user_birthday(user_id: str):
-    return birthdays_collection.find_one({"user_id": user_id})
-
-def save_user_birthday(user_id: str, dob: str):
-    birthdays_collection.update_one(
-        {"user_id": user_id},
-        {"$set": {"dob": dob}},
-        upsert=True
-    )
-
-def delete_user_birthday(user_id: str):
-    birthdays_collection.delete_one({"user_id": user_id})
+def get_outbound_ip():
+    try:
+        ip = requests.get("https://checkip.amazonaws.com").text.strip()
+        print(f"🌍 Outbound IP: {ip}")
+        return ip
+    except Exception as e:
+        print(f"Could not fetch outbound IP: {e}")
+        return None
 
 def get_all_birthdays():
     return list(birthdays_collection.find({}))
 
+def set_birthday(user_id, dob):
+    birthdays_collection.update_one({"user_id": str(user_id)}, {"$set": {"dob": dob}}, upsert=True)
+
+def delete_birthday(user_id):
+    birthdays_collection.delete_one({"user_id": str(user_id)})
+
 # ---------------- BIRTHDAY WISH ----------------
 async def send_birthday_message(user_id, info, test=False):
     channel = bot.get_channel(WISHES_CHANNEL_ID)
-    if channel:
-        age_now = calculate_age(info["dob"])
+    if not channel:
+        return
 
-        embed = discord.Embed(
-            title=f"🎉 Happy Birthday <@{user_id}>! 🎂",
-            description="Wishing you a day filled with love, joy, and laughter",
-            color=discord.Color.pink()
-        )
-        embed.add_field(name="Current Age", value=str(age_now), inline=True)
+    age_now = calculate_age(info["dob"])
+    embed = discord.Embed(
+        title=f"🎉 Happy Birthday <@{user_id}>! 🎂",
+        description="Wishing you a day filled with love, joy, and laughter",
+        color=discord.Color.pink()
+    )
+    embed.add_field(name="Current Age", value=str(age_now), inline=True)
 
-        if not test:
-            content = f"🎂 @everyone Join me in wishing <@{user_id}> a **Happy Birthday!** 🎉🥳"
-        else:
-            content = f"🧪 Test: This is how your birthday wish would look for <@{user_id}>"
+    if not test:
+        content = f"🎂 @everyone Join me in wishing <@{user_id}> a **Happy Birthday!** 🎉🥳"
+    else:
+        content = f"🧪 Test: This is how your birthday wish would look for <@{user_id}>"
 
-        await channel.send(
-            content=content,
-            embed=embed,
-            allowed_mentions=discord.AllowedMentions(everyone=True, users=True)
-        )
+    await channel.send(
+        content=content,
+        embed=embed,
+        allowed_mentions=discord.AllowedMentions(everyone=True, users=True)
+    )
 
-        print(f"[BIRTHDAY MESSAGE] Sent for user {user_id} (test={test})")
+    # Post your GIF/MP4 link right after
+    await channel.send("🎂 Here’s your birthday GIF:\nhttps://images-ext-1.discordapp.net/external/wMG1LsMTVXxap4M8nZPUfieEeRCcBdOqRV_vK_fypx0/https/media.tenor.com/Oew16xC0ydcAAAPo/happy-birthday-happybirthday.mp4")
 
-# ---------------- AUTOMATIC BIRTHDAY CHECK ----------------
+    print(f"[BIRTHDAY MESSAGE] Sent for user {user_id} (test={test})")
+
+# ---------------- AUTOMATIC CHECK ----------------
 @tasks.loop(hours=24)
 async def check_birthdays():
     await bot.wait_until_ready()
     today = datetime.datetime.now().strftime("%m-%d")
     data = get_all_birthdays()
-    for info in data:
+    for record in data:
         try:
-            dob = datetime.datetime.strptime(info["dob"], "%Y-%m-%d")
+            dob = datetime.datetime.strptime(record["dob"], "%Y-%m-%d")
             if dob.strftime("%m-%d") == today:
-                await send_birthday_message(info["user_id"], info)
-                print(f"[AUTO] Birthday detected for {info['user_id']} on {today}")
+                await send_birthday_message(record["user_id"], record)
+                print(f"[AUTO] Birthday for {record['user_id']} on {today}")
         except Exception as e:
-            print(f"Error checking birthday: {e}")
+            print(f"Error in birthday check: {e}")
 
 # ---------------- DOB MODAL ----------------
 class DOBModal(Modal):
@@ -115,34 +122,16 @@ class DOBModal(Modal):
         self.add_item(TextInput(label="Date of Birth (YYYY-MM-DD)"))
 
     async def on_submit(self, interaction: discord.Interaction):
-        try:
-            dob = self.children[0].value.strip()
+        dob = self.children[0].value.strip()
+        if not validate_dob(dob):
+            await interaction.response.send_message("❌ Invalid DOB! Use YYYY-MM-DD format.", ephemeral=True)
+            return
+        set_birthday(interaction.user.id, dob)
+        action = "UPDATED" if self.is_update else "REGISTERED"
+        print(f"[{action}] {interaction.user} DOB = {dob}")
+        await interaction.response.send_message(f"✅ DOB {action.lower()} saved!", ephemeral=True)
 
-            if not validate_dob(dob):
-                await interaction.response.send_message(
-                    "❌ Invalid DOB! Please use YYYY-MM-DD format (e.g. 1997-10-15).",
-                    ephemeral=True
-                )
-                return
-
-            save_user_birthday(str(interaction.user.id), dob)
-
-            action = "UPDATED" if self.is_update else "REGISTERED"
-            print(f"[{action}] User {interaction.user} ({interaction.user.id}) DOB={dob}")
-
-            await interaction.response.send_message(
-                f"✅ DOB {action.lower()} successfully!", ephemeral=True
-            )
-
-        except Exception as e:
-            print(f"[ERROR] DOB register/update failed: {e}")
-            if not interaction.response.is_done():
-                await interaction.response.send_message(
-                    f"❌ Something went wrong.\nError: `{e}`",
-                    ephemeral=True
-                )
-
-# ---------------- VIEW WITH BUTTONS ----------------
+# ---------------- VIEW ----------------
 class BirthdayView(View):
     def __init__(self):
         super().__init__(timeout=None)
@@ -157,22 +146,20 @@ class BirthdayView(View):
 
     @discord.ui.button(label="🗑️ Delete DOB", style=discord.ButtonStyle.danger, custom_id="delete_dob")
     async def delete_callback(self, interaction: discord.Interaction, button: Button):
-        if get_user_birthday(str(interaction.user.id)):
-            delete_user_birthday(str(interaction.user.id))
-            await interaction.response.send_message("🗑️ Your DOB entry has been deleted.", ephemeral=True)
-        else:
-            await interaction.response.send_message("❌ No DOB found to delete.", ephemeral=True)
+        delete_birthday(interaction.user.id)
+        print(f"[DELETE] {interaction.user} deleted DOB entry")
+        await interaction.response.send_message("🗑️ Deleted your DOB entry.", ephemeral=True)
 
-    @discord.ui.button(label="🧪 Test Birthday", style=discord.ButtonStyle.secondary, custom_id="test_birthday")
+    @discord.ui.button(label="🧪 Test Birthday", style=discord.ButtonStyle.secondary, custom_id="test_bday")
     async def test_callback(self, interaction: discord.Interaction, button: Button):
-        info = get_user_birthday(str(interaction.user.id))
-        if not info:
-            await interaction.response.send_message("❌ No DOB found to test. Register first!", ephemeral=True)
+        rec = birthdays_collection.find_one({"user_id": str(interaction.user.id)})
+        if not rec:
+            await interaction.response.send_message("❌ You haven't registered DOB yet.", ephemeral=True)
             return
-        await send_birthday_message(str(interaction.user.id), info, test=True)
-        await interaction.response.send_message("✅ Test message sent to wishes channel!", ephemeral=True)
+        await send_birthday_message(str(interaction.user.id), rec, test=True)
+        await interaction.response.send_message("✅ Test birthday posted.", ephemeral=True)
 
-    @discord.ui.button(label="📅 Upcoming Birthdays", style=discord.ButtonStyle.secondary, custom_id="upcoming_birthdays")
+    @discord.ui.button(label="📅 Upcoming Birthdays", style=discord.ButtonStyle.secondary, custom_id="upcoming_bday")
     async def upcoming_callback(self, interaction: discord.Interaction, button: Button):
         data = get_all_birthdays()
         if not data:
@@ -181,93 +168,68 @@ class BirthdayView(View):
 
         today = datetime.datetime.now()
         upcoming = []
-
-        for info in data:
+        for rec in data:
             try:
-                dob = datetime.datetime.strptime(info["dob"], "%Y-%m-%d")
-                next_bday = dob.replace(year=today.year)
-                if next_bday < today:
-                    next_bday = dob.replace(year=today.year + 1)
-                upcoming.append((next_bday, info["user_id"], info))
+                dob = datetime.datetime.strptime(rec["dob"], "%Y-%m-%d")
+                nxt = dob.replace(year=today.year)
+                if nxt < today:
+                    nxt = dob.replace(year=today.year + 1)
+                upcoming.append((nxt, rec["user_id"], rec))
             except:
                 continue
-
         upcoming.sort(key=lambda x: x[0])
         next_fifteen = upcoming[:15]
 
         embed = discord.Embed(
             title="📅 Upcoming Birthdays",
-            description="Here are the next 15 birthdays 🎂",
+            description="Here are the next birthdays 🎂",
             color=discord.Color.blue()
         )
-
-        for date, user_id, info in next_fifteen:
-            age_next = calculate_age(info["dob"])
+        for date, uid, rec in next_fifteen:
+            age_next = calculate_age(rec["dob"]) + 1
             embed.add_field(
                 name=date.strftime("%b %d"),
-                value=f"🎂 <@{user_id}> (Will be {age_next})",
+                value=f"🎂 <@{uid}> (Will be {age_next})",
                 inline=False
             )
-
         await interaction.response.send_message(embed=embed, ephemeral=True)
 
 # ---------------- SLASH COMMANDS ----------------
-@bot.tree.command(name="birthday", description="Manage your DOB info")
+@tree.command(name="birthday", description="Manage your DOB info")
 async def birthday(interaction: discord.Interaction):
     if interaction.channel.id != ENTRY_CHANNEL_ID:
-        await interaction.response.send_message(
-            f"❌ Please only use this command in <#{ENTRY_CHANNEL_ID}> channel.", ephemeral=True
-        )
+        await interaction.response.send_message(f"❌ Use only <#{ENTRY_CHANNEL_ID}> channel.", ephemeral=True)
         return
+    await interaction.response.send_message("🎂 Choose an option below:", view=BirthdayView(), ephemeral=True)
 
-    view = BirthdayView()
-    await interaction.response.send_message("🎂 Choose an option below:", view=view, ephemeral=True)
-
-@bot.tree.command(name="dbcheck", description="Check MongoDB connection and registered birthdays (Admin only)")
+@tree.command(name="dbcheck", description="Check DB (Admin only)")
 async def dbcheck(interaction: discord.Interaction):
-    # ✅ Role check for "Admin"
     if not any(r.name == "Admin" for r in interaction.user.roles):
-        await interaction.response.send_message("❌ You must have the 'Admin' role to use this command.", ephemeral=True)
+        await interaction.response.send_message("❌ You need the Admin role.", ephemeral=True)
         return
-
     try:
         count = birthdays_collection.count_documents({})
-        await interaction.response.send_message(
-            f"✅ MongoDB connection is alive.\n"
-            f"📊 Registered birthdays: **{count}** users",
-            ephemeral=True
-        )
-        print(f"[DBCHECK] {interaction.user} checked DB: {count} users")
+        await interaction.response.send_message(f"✅ DB OK. Registered users: {count}", ephemeral=True)
     except Exception as e:
-        await interaction.response.send_message(
-            f"❌ Database check failed.\nError: `{e}`",
-            ephemeral=True
-        )
-        print(f"[ERROR] DB check failed: {e}")
+        await interaction.response.send_message(f"❌ DB error: {e}", ephemeral=True)
 
 # ---------------- EVENTS ----------------
 @bot.event
 async def on_ready():
     guild = discord.Object(id=DISCORD_GUILD_ID)
     await tree.sync(guild=guild)
-    print(f"✅ Logged in as {bot.user} (Commands synced for guild {DISCORD_GUILD_ID})")
-
-    # Register persistent view
+    print(f"✅ Logged in as {bot.user}")
+    get_outbound_ip()
     bot.add_view(BirthdayView())
-
-    # Auto-post menu on startup
     channel = bot.get_channel(ENTRY_CHANNEL_ID)
     if channel:
-        view = BirthdayView()
-        menu_msg = await channel.send("🎂 Birthday Menu - Choose an option below:", view=view)
-        await menu_msg.pin()
-        print("[AUTO] Birthday menu posted and pinned.")
-
+        msg = await channel.send("🎂 Birthday Menu - Choose option:", view=BirthdayView())
+        await msg.pin()
+        print("[AUTO] Menu posted and pinned.")
     check_birthdays.start()
 
 # ---------------- KEEP-ALIVE ----------------
 app = Flask('')
-
 @app.route('/')
 def home():
     return "Bot is running!"
@@ -277,5 +239,4 @@ def run():
 
 Thread(target=run).start()
 
-# ---------------- RUN BOT ----------------
 bot.run(DISCORD_TOKEN)
